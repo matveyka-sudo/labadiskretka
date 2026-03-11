@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <string.h>
-#include <math.h>
+#include <stdbool.h>
+#include <time.h>
 #define SIGN (1u << ((sizeof(unsigned int)* 8)-1))
 #define BASE (1ULL << 32)
 typedef struct{
@@ -337,7 +338,7 @@ void multi(BigInt* num1,BigInt* num2){
             pos++;
         }
     }
-    unsigned int j=res_len;
+    unsigned int j=res_len-1;
     while(j>0 && tmp[j]==0){
         j-=1;
     }
@@ -347,6 +348,7 @@ void multi(BigInt* num1,BigInt* num2){
         free(tmp);
         free(num1_full);
         free(num2_full);
+        return;
     }
     free(num1->digits);
     unsigned int* new_digits=(unsigned int*)malloc((j+1)*sizeof(unsigned int));
@@ -354,7 +356,7 @@ void multi(BigInt* num1,BigInt* num2){
     for(int i=0;i<j-1;i++){
         new_digits[i+1]=tmp[i];
     }
-    num1->elder_number=tmp[j-1]*result_sign;
+    num1->elder_number=tmp[j]*result_sign;
     free(tmp);
     free(num1_full);
     free(num2_full);
@@ -380,7 +382,7 @@ void print(BigInt* num){
         return;
     }
     if(get_sign(num)<0){
-        printf('-');
+        printf("-");
     }
     unsigned int len=num->digits[0];
     int n=num->elder_number;
@@ -399,11 +401,48 @@ void add(BigInt* num,int value){
     }
     free(num->digits);
     unsigned int* new_digits=(unsigned int*)malloc(sizeof(unsigned int));
+    if(new_digits==NULL){
+        init(num);
+        return;
+    }
     new_digits[0]=0;
+    num->digits=new_digits;
     num->elder_number=value;
 }
 
-BigInt vosstanovlenie(unsigned int* arr[],unsigned int len){
+void add1(BigInt* num,unsigned long long value){
+    if(value==0){
+        free(num->digits);
+        init(num);
+        return;
+    }
+    free(num->digits);
+    if(value>=4294967296ULL){
+        unsigned int* new_digits=(unsigned int*)malloc(sizeof(unsigned int)*2);
+        if(new_digits==NULL){
+            init(num);
+            return;
+        }
+        new_digits[0]=1;
+        new_digits[1]=value%4294967296ULL;
+        num->digits=new_digits;
+        num->elder_number=value/4294967296ULL;
+        return;
+    }
+    else{
+        unsigned int* new_digits=(unsigned int*)malloc(sizeof(unsigned int));
+        if(new_digits==NULL){
+            init(num);
+            return;
+        }
+        new_digits[0]=0;
+        num->elder_number=value;
+        num->digits=new_digits;
+        return;
+    }
+}
+
+BigInt vosstanovlenie(unsigned int arr[],unsigned int len){
     BigInt res;
     if(len==0){
         init(&res);
@@ -421,15 +460,15 @@ BigInt vosstanovlenie(unsigned int* arr[],unsigned int len){
     unsigned int* new_digits=(unsigned int*)malloc((new_len+1)*sizeof(unsigned int));
     if(new_digits==NULL){
         init(&res);
-        return;
+        return res;
     }
     new_digits[0]=new_len;
     for(int i=0;i<new_len;i++){
         new_digits[i+1]=arr[i];
     }
     res.digits=new_digits;
-    res.elder_number=(int)arr[len-1];
-    return;
+    res.elder_number=(int)arr[j-1];
+    return res;
 } 
 
 BigInt sdvig(BigInt* num,unsigned int shift){
@@ -446,10 +485,10 @@ BigInt sdvig(BigInt* num,unsigned int shift){
         return res;
     }
     new_digits[0]=new_len;
-    for(int i=1;i<shift;i++){
+    for(int i=1;i<=shift;i++){
         new_digits[i]=0;
     }
-    for(int i=1;i<old_len;i++){
+    for(int i=1;i<=old_len;i++){
         new_digits[i+shift]=num->digits[i];
     }
     res.digits=new_digits;
@@ -518,7 +557,7 @@ BigInt karatsuba_absolute(BigInt* num1,BigInt* num2){
 
 void karatsuba(BigInt* num1,BigInt* num2){
     if((num1->digits[0]==0 && num1->elder_number==0) || (num2->digits[0]==0 && num2->elder_number==0)){
-        free(num1);
+        freee(num1);
         init(num1);
         return;
     }
@@ -538,6 +577,45 @@ void karatsuba(BigInt* num1,BigInt* num2){
     *num1=res_abs;
     freee(&absa);
     freee(&absb);
+}
+
+void benchmark(void (*func1)(BigInt*,BigInt*),void(*func2)(BigInt*,BigInt*)){
+    BigInt num;
+    BigInt num2;
+    init(&num);
+    init(&num2);
+    add(&num,123456789);
+    add(&num2,987654321);
+    clock_t start,end;
+    BigInt a_copy,b_copy;
+    copy1(&a_copy,&num);
+    copy1(&b_copy,&num2);
+    start=clock();
+    func1(&a_copy,&b_copy);
+    end=clock();
+    double classic=(double)(end-start)/CLOCKS_PER_SEC;
+    freee(&a_copy);
+    freee(&b_copy);
+    BigInt a_copy2,b_copy2;
+    copy1(&a_copy2,&num);
+    copy1(&b_copy2,&num2);
+    start=clock();
+    func2(&a_copy2,&b_copy2);
+    end=clock();
+    double karatsuba=(double)(end-start)/CLOCKS_PER_SEC;
+    freee(&a_copy2);
+    freee(&b_copy2);
+    printf("classic/karatsuba");
+    printf("%lf %lf",classic,karatsuba);
+    freee(&num);
+    freee(&num2);
+}
+
+BigInt karatsuba_new(BigInt* num1,BigInt* num2){
+    BigInt res;
+    copy1(&res,num1);
+    karatsuba(&res,num2);
+    return res;
 }
 
 BigInt function1(BigInt* num){
@@ -574,8 +652,194 @@ BigInt function1(BigInt* num){
     }
 }
 
+bool chetnost(BigInt* num){
+    if(num->digits[0]==0){
+        if(num->elder_number%2!=0){
+            return true;
+        }else{
+            return false;
+        }
+    }else{
+        if(num->digits[1]%2!=0){
+            return true;
+        }else{
+            return false;
+        }
+    }
+}
+
+void div2(BigInt* num){
+    if(num->digits[0]==0 && num->elder_number==0){
+        return;
+    }
+    unsigned int len=num->digits[0]+1;
+    unsigned int* num_full=(unsigned int*)malloc(len*sizeof(unsigned int));
+    if(num_full==NULL){
+        return;
+    }
+    for(int i=0;i<len-1;i++){
+        num_full[i]=num->digits[i+1];
+    }
+    num_full[len-1]=(num->elder_number<0) ? -num->elder_number : num->elder_number;
+    unsigned long long carry=0;
+    for(int i=len-1;i>=0;i--){
+        unsigned long long temp=(carry << 32)+num_full[i];
+        unsigned long long new_digit=temp >> 1;
+        carry=temp & 1;
+        num_full[i]=(unsigned int)new_digit;
+    }
+    while(len>1 && num_full[len-1]==0){
+        len-=1;
+    }
+    if(len==0){
+        free(num->digits);
+        num->digits=malloc(sizeof(unsigned int));
+        if(num->digits){
+            num->digits[0]=0;
+        }
+        num->elder_number=0;
+        free(num_full);
+        return;
+    }
+    unsigned int* new_digits=(unsigned int*)malloc(len*sizeof(unsigned int));
+    if(new_digits==NULL){
+        free(num_full);
+        return;
+    }
+    new_digits[0]=len-1;
+    for(int i=0;i<len-1;i++){
+        new_digits[i+1]=num_full[i];
+    }
+    free(num->digits);
+    num->digits=new_digits;
+    unsigned int abs_elder=num_full[len-1];
+    num->elder_number=num->elder_number<0 ? -(int)abs_elder : (int)abs_elder;
+    free(num_full);
+}
+
+bool is_zero(BigInt* num){
+    if(num->digits[0]==0 && num->elder_number==0){
+        return true;
+    }else{
+        return false;
+    }
+}
+
+BigInt mod2k(BigInt* num,unsigned int k){
+    BigInt result;
+    init(&result);
+    if(k==0){
+        return result;
+    }
+    unsigned int len=num->digits[0];
+    unsigned int total_digits=len+1;
+    if(num->digits[0]==0 && num->elder_number==0){
+        return result;
+    }
+    unsigned int elder_abs=(num->elder_number<0) ? -num->elder_number : num->elder_number;
+    unsigned int* full=(unsigned int*)malloc(total_digits*sizeof(unsigned int));
+    if(full==NULL){
+        return result;
+    }
+    for(unsigned int i=0;i<total_digits-1;i++){
+        full[i]=num->digits[i+1];
+    }
+    full[total_digits-1]=elder_abs;
+    unsigned int full_digits=k/32;
+    unsigned int rem_bits=k%32;
+    if(full_digits>=total_digits){
+        free(full);
+        BigInt copy;
+        copy1(&copy,num);
+        copy.elder_number=(copy.elder_number<0) ? -copy.elder_number : copy.elder_number;
+        return copy;
+    }
+    unsigned int new_total;
+    unsigned int* new_full=NULL;
+    if(rem_bits==0){
+        new_total=full_digits;
+        if(new_total==0){
+            free(full);
+            return result;
+        }
+        new_full=(unsigned int*)malloc(new_total*sizeof(unsigned int));
+        if(new_full==NULL){
+            free(full);
+            return result;
+        }
+        for(unsigned int i=0;i<new_total;i++){
+                new_full[i]=full[i];
+            }
+    }else{
+        if(full_digits>=total_digits){
+            free(full);
+            return result;
+        }
+        unsigned int next=full[full_digits];
+        unsigned int masked= next & ((1ULL << rem_bits) -1);
+        new_total=full_digits+1;
+        new_full=(unsigned int*)malloc((full_digits+1)*sizeof(unsigned int));
+        if(new_full==NULL){
+            free(full);
+            return result;
+        }
+        for(unsigned int i=0;i<full_digits;i++){
+            new_full[i]=full[i];
+        }
+        new_full[full_digits]=masked;
+    }
+    while(new_total>1 && new_full[new_total-1]==0){
+        new_total--;
+    }
+    unsigned int new_len=new_total-1;
+    unsigned int* new_digits=(unsigned int*)malloc(sizeof(unsigned int)*new_total);
+    if(new_digits==NULL){
+        free(full);
+        free(new_full);
+        return result;
+    }
+    new_digits[0]=new_len;
+    for(unsigned int i=0;i<new_len;i++){
+        new_digits[i+1]=new_full[i];
+    }
+    result.digits=new_digits;
+    result.elder_number=(int)new_full[new_len];
+    free(full);
+    free(new_full);
+    return result;
+}
+
 BigInt function2(BigInt* num){
-    
+    if(num->digits[0]==0 && num->elder_number==0){
+        BigInt result;
+        result.elder_number=1;
+        return result;
+    }
+    BigInt base;
+    add(&base,115249);
+    BigInt res;
+    add(&res,1);
+    int exp=4183;
+    BigInt current;
+    copy1(&current,&base);
+    while(exp>0){
+        if(exp%2!=0){
+            multi(&res,&current);
+        }
+        multi(&current,&current);
+        exp=exp/2;
+    }
+    freee(&current);
+    freee(&base);
+    if(num->digits[0]==0 && num->elder_number<=70340 && num->digits>0){
+        unsigned int k=(unsigned int)num->elder_number;
+        BigInt output;
+        output=mod2k(&res,k);
+        freee(&res);
+        return output;
+    }else{
+        return res;
+    }
 }
 
 int main(){
@@ -598,5 +862,46 @@ int main(){
     freee(&c);
     freee(&c1);
     freee(&c2);
+    BigInt a1,b1,c3,c4,c5;
+    init(&a1);
+    init(&b1);
+    add1(&a1,5000000000);
+    add1(&b1,5000000000);
+    c3=BigIntPlusNew(&a1,&b1);
+    c4=BigIntMinusNew(&a1,&b1);
+    c5=mult(&a1,&b1);
+    print(&c3);
+    printf("\n");
+    print(&c4);
+    printf("\n");
+    print(&c5);
+    printf("\n");
+    freee(&a1);
+    freee(&b1);
+    freee(&c3);
+    freee(&c4);
+    freee(&c5);
+    BigInt a2,b2,a3,b3,c6,c7;
+    init(&a2);
+    init(&b2);
+    init(&a3);
+    init(&b3);
+    add(&a2,123456789);
+    add(&b2,987654321);
+    add1(&a3,5000000000);
+    add1(&b3,5000000000);
+    c6=karatsuba_new(&a2,&b2);
+    print(&c6);
+    printf("\n");
+    c7=karatsuba_new(&a3,&b3);
+    print(&c7);
+    printf("\n");
+    freee(&a2);
+    freee(&b2);
+    freee(&a3);
+    freee(&b3);
+    freee(&c6);
+    freee(&c7);
+    return 0;
 }
 
